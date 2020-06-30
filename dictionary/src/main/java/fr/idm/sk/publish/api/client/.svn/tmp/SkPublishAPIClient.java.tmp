@@ -1,0 +1,448 @@
+package fr.idm.sk.publish.api.client;
+
+import java.io.UnsupportedEncodingException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URLEncoder;
+import java.nio.charset.Charset;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+
+import org.apache.commons.codec.binary.Base64;
+import org.apache.commons.httpclient.HttpClient;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.CommonsClientHttpRequestFactory;
+import org.springframework.util.StringUtils;
+import org.springframework.web.client.ResponseErrorHandler;
+import org.springframework.web.client.RestTemplate;
+
+import fr.idm.sk.publish.api.client.model.APIEntity;
+import fr.idm.sk.publish.api.client.model.Dictionary;
+import fr.idm.sk.publish.api.client.model.Entry;
+import fr.idm.sk.publish.api.client.model.EntryPronunciation;
+import fr.idm.sk.publish.api.client.model.ErrorEntity;
+import fr.idm.sk.publish.api.client.model.RelatedEntries;
+import fr.idm.sk.publish.api.client.model.Search;
+import fr.idm.sk.publish.api.client.model.WordOfTheDay;
+import fr.idm.sk.publish.api.client.model.WordOfTheDayPreview;
+
+/**
+ * Implementation of the SkPublish API Java client.
+ * 
+ * @author arnaud
+ */
+public class SkPublishAPIClient implements SkPublishAPI {
+
+    private static List<String> httpFormats = new ArrayList<String>();
+    {
+        httpFormats.add("application/json");
+        httpFormats.add("application/xml");
+    }
+
+    private String acceptedFormat = "application/json";
+
+    private String accessKey;
+
+    private String apiPassword;
+
+    private String apiUsername;
+
+    private String baseUrl;
+
+    private String defaultFormat = "html";
+
+    private int defaultSearchMaxSize = 10;
+
+    private RestTemplate restTemplate;
+
+    public SkPublishAPIClient() {
+        initRestTemplate();
+    }
+
+    /**
+     * Creates a new client.
+     * 
+     * @param baseUrl
+     * @param accessKey
+     */
+    public SkPublishAPIClient(String baseUrl, String accessKey) {
+        setBaseUrl(baseUrl);
+        this.accessKey = accessKey;
+        initRestTemplate();
+    }
+
+    /**
+     * @return the acceptedFormat
+     */
+    public String getAcceptedFormat() {
+        return acceptedFormat;
+    }
+
+    /**
+     * @return the accessKey
+     */
+    public String getAccessKey() {
+        return accessKey;
+    }
+
+    public String getApiPassword() {
+        return apiPassword;
+    }
+
+    public String getApiUsername() {
+        return apiUsername;
+    }
+
+    /**
+     * Gets the base URL.
+     * 
+     * @return the base URL.
+     */
+    public String getBaseUrl() {
+        return baseUrl;
+    }
+
+    @Override
+    public APIEntity[] getDictionaries() {
+        HttpHeaders requestHeaders = getRequestHeaders();
+        HttpEntity<Object> entity = new HttpEntity<Object>(requestHeaders);
+        ResponseEntity<Dictionary[]> result = null;
+        try {
+            result = restTemplate.exchange(baseUrl + "dictionaries/", HttpMethod.GET, entity,
+                    Dictionary[].class);
+        } catch (RestResponseException e) {
+            @SuppressWarnings("unchecked")
+            ResponseEntity<ErrorEntity[]> errorResponse = (ResponseEntity<ErrorEntity[]>) e
+                    .getResponseEntity();
+            errorResponse.getBody()[0].setHttpStatusCode(errorResponse.getStatusCode().value());
+            return errorResponse.getBody();
+        }
+        return result.getBody();
+    }
+
+    @Override
+    public APIEntity getDictionary(String dictionaryCode) {
+        HttpHeaders requestHeaders = getRequestHeaders();
+        HttpEntity<Object> entity = new HttpEntity<Object>(requestHeaders);
+        ResponseEntity<Dictionary> result = null;
+        try {
+            result = restTemplate.exchange(baseUrl + "dictionaries/{dictionaryCode}",
+                    HttpMethod.GET, entity, Dictionary.class, dictionaryCode);
+        } catch (RestResponseException e) {
+            @SuppressWarnings("unchecked")
+            ResponseEntity<ErrorEntity> errorResponse = (ResponseEntity<ErrorEntity>) e
+                    .getResponseEntity();
+            errorResponse.getBody().setHttpStatusCode(errorResponse.getStatusCode().value());
+            return errorResponse.getBody();
+        }
+        return result.getBody();
+    }
+
+    @Override
+    public APIEntity getEntry(String dictionaryCode, String entryId) {
+        return getEntry(dictionaryCode, entryId, this.defaultFormat);
+    }
+
+    @Override
+    public APIEntity getEntry(String dictionaryCode, String entryId, String format) {
+        if (format == null)
+            format = this.defaultFormat;
+        HttpHeaders requestHeaders = getRequestHeaders();
+        HttpEntity<Object> entity = new HttpEntity<Object>(requestHeaders);
+        ResponseEntity<Entry> result = null;
+        try {
+            result = restTemplate.exchange(new URI(baseUrl + "dictionaries/" + dictionaryCode
+                    + "/entries/" + URLEncoder.encode(entryId, "UTF-8") + "?format=" + format),
+                    HttpMethod.GET, entity, Entry.class);
+        } catch (RestResponseException e) {
+            @SuppressWarnings("unchecked")
+            ResponseEntity<ErrorEntity> errorResponse = (ResponseEntity<ErrorEntity>) e
+                    .getResponseEntity();
+            errorResponse.getBody().setHttpStatusCode(errorResponse.getStatusCode().value());
+            return errorResponse.getBody();
+        } catch (UnsupportedEncodingException e) {
+        } catch (URISyntaxException e) {
+        }
+        return result.getBody();
+    }
+
+    @Override
+    public APIEntity[] getEntryPronunciations(String dictionaryCode, String entryId) {
+        return getEntryPronunciations(dictionaryCode, entryId, null);
+    }
+
+    @Override
+    public APIEntity[] getEntryPronunciations(String dictionaryCode, String entryId, String lang) {
+        HttpHeaders requestHeaders = getRequestHeaders();
+        HttpEntity<Object> entity = new HttpEntity<Object>(requestHeaders);
+        ResponseEntity<EntryPronunciation[]> result = null;
+        try {
+            if (lang == null) {
+                result = restTemplate.exchange(new URI(baseUrl + "dictionaries/" + dictionaryCode
+                        + "/entries/" + URLEncoder.encode(entryId, "UTF-8") + "/pronunciations"),
+                        HttpMethod.GET, entity, EntryPronunciation[].class);
+            } else {
+                result = restTemplate.exchange(new URI(baseUrl + "dictionaries/" + dictionaryCode
+                        + "/entries/" + URLEncoder.encode(entryId, "UTF-8")
+                        + "/pronunciations?lang=" + lang), HttpMethod.GET, entity,
+                        EntryPronunciation[].class);
+            }
+        } catch (RestResponseException e) {
+            @SuppressWarnings("unchecked")
+            ResponseEntity<ErrorEntity[]> errorResponse = (ResponseEntity<ErrorEntity[]>) e
+                    .getResponseEntity();
+            errorResponse.getBody()[0].setHttpStatusCode(errorResponse.getStatusCode().value());
+            return errorResponse.getBody();
+        } catch (UnsupportedEncodingException e) {
+        } catch (URISyntaxException e) {
+        }
+        return result.getBody();
+    }
+
+    @Override
+    public APIEntity getRelatedEntries(String dictionaryCode, String entryId) {
+        HttpHeaders requestHeaders = getRequestHeaders();
+        HttpEntity<Object> entity = new HttpEntity<Object>(requestHeaders);
+        ResponseEntity<RelatedEntries> result = null;
+        try {
+            result = restTemplate.exchange(new URI(baseUrl + "dictionaries/" + dictionaryCode
+                    + "/entries/" + URLEncoder.encode(entryId, "UTF-8") + "/relatedentries"),
+                    HttpMethod.GET, entity, RelatedEntries.class);
+        } catch (RestResponseException e) {
+            @SuppressWarnings("unchecked")
+            ResponseEntity<ErrorEntity> errorResponse = (ResponseEntity<ErrorEntity>) e
+                    .getResponseEntity();
+            errorResponse.getBody().setHttpStatusCode(errorResponse.getStatusCode().value());
+            return errorResponse.getBody();
+        } catch (UnsupportedEncodingException e) {
+        } catch (URISyntaxException e) {
+        }
+        return result.getBody();
+    }
+
+    private HttpHeaders getRequestHeaders() {
+        // Don't know whether or not we can always return the same object.
+        HttpHeaders requestHeaders = new HttpHeaders();
+        requestHeaders.set("Accept", this.acceptedFormat);
+        requestHeaders.set("accessKey", accessKey);
+        if (StringUtils.hasText(this.apiUsername) && StringUtils.hasText(this.apiPassword)) {
+            byte[] userPassword = new String(this.apiUsername + ":" + this.apiPassword)
+                    .getBytes(Charset.forName("UTF-8"));
+            try {
+                requestHeaders.set("Authorization",
+                        "Basic " + new String(Base64.encodeBase64(userPassword), "UTF-8"));
+            } catch (UnsupportedEncodingException e) {
+            }
+        }
+        return requestHeaders;
+    }
+
+    @Override
+    public APIEntity getSearchFirst(String dictionaryCode, String searchWord) {
+        return getSearchFirst(dictionaryCode, searchWord, this.defaultFormat);
+    }
+
+    @Override
+    public APIEntity getSearchFirst(String dictionaryCode, String searchWord, String format) {
+        if (format == null)
+            format = this.defaultFormat;
+        HttpHeaders requestHeaders = getRequestHeaders();
+        HttpEntity<Object> entity = new HttpEntity<Object>(requestHeaders);
+        ResponseEntity<Entry> result = null;
+        try {
+            result = restTemplate.exchange(new URI(baseUrl + "dictionaries/" + dictionaryCode
+                    + "/search/first/?q=" + URLEncoder.encode(searchWord, "UTF-8") + "&format="
+                    + format), HttpMethod.GET, entity, Entry.class);
+        } catch (RestResponseException e) {
+            @SuppressWarnings("unchecked")
+            ResponseEntity<ErrorEntity> errorResponse = (ResponseEntity<ErrorEntity>) e
+                    .getResponseEntity();
+            errorResponse.getBody().setHttpStatusCode(errorResponse.getStatusCode().value());
+            return errorResponse.getBody();
+        } catch (UnsupportedEncodingException e) {
+        } catch (URISyntaxException e) {
+        }
+        return result.getBody();
+    }
+
+    private String getStringDateOfToday() {
+        SimpleDateFormat sdf = new SimpleDateFormat("ddMM");
+        Date today = new Date();
+        return sdf.format(today);
+    }
+
+    @Override
+    public APIEntity getWordOfTheDay() {
+        return getWordOfTheDay(null, null, this.defaultFormat);
+    }
+
+    @Override
+    public APIEntity getWordOfTheDay(String dictionaryCode) {
+        return getWordOfTheDay(dictionaryCode, null, this.defaultFormat);
+    }
+
+    @Override
+    public APIEntity getWordOfTheDay(String dictionaryCode, String day) {
+        return getWordOfTheDay(dictionaryCode, day, this.defaultFormat);
+    }
+
+    // TODO: we need 2 methods getWordOfTheDay() and getDictionaryWordOfTheDay()
+    @Override
+    public APIEntity getWordOfTheDay(String dictionaryCode, String day, String format) {
+        if (day == null)
+            day = getStringDateOfToday();
+        if (format == null)
+            format = this.defaultFormat;
+        HttpHeaders requestHeaders = getRequestHeaders();
+        HttpEntity<Object> entity = new HttpEntity<Object>(requestHeaders);
+        ResponseEntity<WordOfTheDay> result;
+        try {
+            if (dictionaryCode == null) {
+                result = restTemplate.exchange(baseUrl + "wordoftheday/?day={day}&format={format}",
+                        HttpMethod.GET, entity, WordOfTheDay.class, day, format);
+            } else {
+                result = restTemplate.exchange(baseUrl
+                        + "dictionaries/{dictionaryCode}/wordoftheday/?day={day}&format={format}",
+                        HttpMethod.GET, entity, WordOfTheDay.class, dictionaryCode, day, format);
+            }
+        } catch (RestResponseException e) {
+            @SuppressWarnings("unchecked")
+            ResponseEntity<ErrorEntity> errorResponse = (ResponseEntity<ErrorEntity>) e
+                    .getResponseEntity();
+            errorResponse.getBody().setHttpStatusCode(errorResponse.getStatusCode().value());
+            return errorResponse.getBody();
+        }
+        return result.getBody();
+    }
+
+    @Override
+    public APIEntity getWordOfTheDayPreview() {
+        return getWordOfTheDayPreview(null);
+    }
+
+    @Override
+    public APIEntity getWordOfTheDayPreview(String dictionaryCode) {
+        return getWordOfTheDayPreview(dictionaryCode, null);
+    }
+
+    // TODO: we need 2 methods getWordOfTheDayPreview() and getDictionaryWordOfTheDayPreview()
+    @Override
+    public APIEntity getWordOfTheDayPreview(String dictionaryCode, String day) {
+        if (day == null)
+            day = getStringDateOfToday();
+        HttpHeaders requestHeaders = getRequestHeaders();
+        HttpEntity<Object> entity = new HttpEntity<Object>(requestHeaders);
+        ResponseEntity<WordOfTheDayPreview> result;
+        try {
+            if (dictionaryCode == null) {
+                result = restTemplate.exchange(baseUrl + "wordoftheday/preview?day={day}",
+                        HttpMethod.GET, entity, WordOfTheDayPreview.class, day);
+            } else {
+                result = restTemplate.exchange(baseUrl
+                        + "dictionaries/{dictionaryCode}/wordoftheday/preview?day={day}",
+                        HttpMethod.GET, entity, WordOfTheDayPreview.class, dictionaryCode, day);
+            }
+        } catch (RestResponseException e) {
+            @SuppressWarnings("unchecked")
+            ResponseEntity<ErrorEntity> errorResponse = (ResponseEntity<ErrorEntity>) e
+                    .getResponseEntity();
+            errorResponse.getBody().setHttpStatusCode(errorResponse.getStatusCode().value());
+            return errorResponse.getBody();
+        }
+        return result.getBody();
+    }
+
+    private void initRestTemplate() {
+        RestTemplate template = new RestTemplate();
+        HttpClient client = new HttpClient();
+        CommonsClientHttpRequestFactory requestFactory = new CommonsClientHttpRequestFactory(client);
+        template.setRequestFactory(requestFactory);
+        ResponseErrorHandler errorHandler = new RestResponseErrorHandler<ErrorEntity>(ErrorEntity.class);
+        template.setErrorHandler(errorHandler);
+        this.restTemplate = template;
+    }
+
+    @Override
+    public APIEntity search(String dictionaryCode, String searchWord) {
+        return search(dictionaryCode, searchWord, this.defaultSearchMaxSize);
+    }
+
+    @Override
+    public APIEntity search(String dictionaryCode, String searchWord, Integer maxSize) {
+        if (maxSize == null)
+            maxSize = this.defaultSearchMaxSize;
+        HttpHeaders requestHeaders = getRequestHeaders();
+        HttpEntity<Object> entity = new HttpEntity<Object>(requestHeaders);
+        ResponseEntity<Search> result = null;
+        try {
+            result = restTemplate.exchange(new URI(baseUrl + "dictionaries/" + dictionaryCode
+                    + "/search/?q=" + URLEncoder.encode(searchWord, "UTF-8") + "&maxsize="
+                    + maxSize), HttpMethod.GET, entity, Search.class);
+        } catch (RestResponseException e) {
+            @SuppressWarnings("unchecked")
+            ResponseEntity<ErrorEntity> errorResponse = (ResponseEntity<ErrorEntity>) e
+                    .getResponseEntity();
+            errorResponse.getBody().setHttpStatusCode(errorResponse.getStatusCode().value());
+            return errorResponse.getBody();
+        } catch (UnsupportedEncodingException e) {
+        } catch (URISyntaxException e) {
+        }
+        return result.getBody();
+    }
+
+    /**
+     * @param acceptedFormat
+     *            the acceptedFormat to set
+     */
+    public void setAcceptedFormat(String acceptedFormat) {
+        if (acceptedFormat != null && httpFormats.contains(acceptedFormat))
+            this.acceptedFormat = acceptedFormat;
+    }
+
+    /**
+     * @param accessKey
+     *            the accessKey to set
+     */
+    public void setAccessKey(String accessKey) {
+        this.accessKey = accessKey;
+    }
+
+    /**
+     * Set the HTTP password for API basic authentication
+     * 
+     * @param apiPassword
+     *            password for API website
+     */
+    public void setApiPassword(String apiPassword) {
+        this.apiPassword = apiPassword;
+    }
+
+    /**
+     * Set the HTTP username for API basic authentication
+     * 
+     * @param apiUsername
+     *            username for API website
+     */
+    public void setApiUsername(String apiUsername) {
+        this.apiUsername = apiUsername;
+    }
+
+    /**
+     * Sets the base URL.
+     * 
+     * @param baseUrl
+     *            the base URL.
+     */
+    public void setBaseUrl(String baseUrl) {
+        if (baseUrl.endsWith("/"))
+            this.baseUrl = baseUrl;
+        else
+            this.baseUrl = baseUrl + "/";
+    }
+
+}
